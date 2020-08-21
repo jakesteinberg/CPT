@@ -247,44 +247,15 @@ def parse_grid_tracks(tracks, df2_s, d_grid_step, interp_cutoff):
     return lon_t, lat_t, track_t, adt, sla, sla_int, dist, lon_record, lat_record, time_record, track_record
 
 
-def coarsen(dist, lon_record, lat_record, coarsening_factor, sig_in):  
-    coarse_sig_out = []
-    coarse_grid_out = []
-    coarse_lon_out = []
-    coarse_lat_out = []
-    for mm in tqdm(range(len(dist))):  # loop over each track 
-        this_dist = dist[mm]
-        this_lon = lon_record[mm]
-        this_lat = lat_record[mm]
-        smooth_sig = sig_in[mm]
-        
-        coarse_grid = np.arange(this_dist[0], this_dist[-1], (this_dist[1] - this_dist[0]) * coarsening_factor)
-        coarse_i = np.nan * np.ones((np.shape(smooth_sig)[0], len(coarse_grid) - 1))
-        coarse_lon = np.nan * np.ones(len(coarse_grid) - 1)
-        coarse_lat = np.nan * np.ones(len(coarse_grid) - 1)
-        
-        if len(coarse_grid) > 3:
-            coarse_grid_c = coarse_grid[0:-1] + (coarse_grid[1] - coarse_grid[0])/2  # bin center  
-        else:
-            coarse_grid_c = coarse_grid[0:-1]  
-
-        if len(coarse_grid) > coarsening_factor:           
-            # average all points in bins with width equal to coarser grid 
-            for j in range(1, len(coarse_grid)):
-                coarse_i[:, j - 1] = np.nanmean(smooth_sig[:, (this_dist > coarse_grid[j - 1]) & (this_dist < coarse_grid[j])], axis=1)  
-                coarse_lon[j - 1] = np.nanmean(this_lon[(this_dist > coarse_grid[j - 1]) & (this_dist < coarse_grid[j])])
-                coarse_lat[j - 1] = np.nanmean(this_lat[(this_dist > coarse_grid[j - 1]) & (this_dist < coarse_grid[j])])
-        
-        coarse_grid_out.append(coarse_grid_c)
-        coarse_lon_out.append(coarse_lon)
-        coarse_lat_out.append(coarse_lat)
-        coarse_sig_out.append(coarse_i)
-                    
-    return coarse_grid_out, coarse_lon_out, coarse_lat_out, coarse_sig_out
-
-
-def specsharp(grid_spacing, coarse_fac, nyquist_wavenumber):     
-    # -- get filter weights for a given filter width, n grid cells
+# ----------------------------------------------------------
+# create filter kernel, function of
+# - grid step (grid_spacing) (I'm using units of km) 
+# - coarsening factor (x) (grid_spacing * coarse_fac = desired grid step) 
+# - and nyquist wavenumber
+#      - relative to desired grid step (or new coarsened grid), what is our smallest resolvable scale on new grid
+#      - true nyquist wavenumber = grid_spacing * nyquist_wavenumber 
+def specsharp(grid_spacing, x, nyquist_wavelength):     
+    # -- find filter weights for a given filter width, n grid cells
     def getWeights(n):  
         w = np.zeros(n+1) # initialize weights
         for i in range(n):
@@ -295,19 +266,17 @@ def specsharp(grid_spacing, coarse_fac, nyquist_wavenumber):
         w[0] = 1 - 2*np.sum(w[1:])
         return w
     
-    x = coarse_fac                  # coarsening factor (actual 'width' is a function of grid spacing)
-    # nyquist_wavenumber = smallest resolvable scale on the 'new' grid 
-    F = interpolate.PchipInterpolator(np.array([0, 1/x, nyquist_wavenumber/x, nyquist_wavenumber]), np.array([1, 1, 0, 0]))
+    F = interpolate.PchipInterpolator(np.array([0, 1/x, nyquist_wavelenth/x, nyquist_wavelength]), np.array([1, 1, 0, 0]))
     print('Filter Half-Width = ')    
             
     weight_prev = getWeights(2)
     # loop over filter widths until weights converge
-    for j in range(3, 50):  # 40 might not be enough? 
+    for j in range(3, 50):  # 50 iterations should be enough unless coarsening scale is really large 
         this_weight = getWeights(j)
-        # difference between these weights and last iterations (looking for convergence)
+        # difference between these weights and last iterations (looking for convergence over first 4 weights)
         wd = np.sum(np.abs(this_weight[0:3] - weight_prev[0:3]) / np.abs(weight_prev[0:3]))  
-        if wd < 0.001:  # convergence threshold 
-            jj = j
+        if wd < 0.001:  # convergence threshold (arbitrary threshold...I'd rather be too conservative) 
+            jj = j      # jj = have filter length (in number of grid cells) 
             print(str(j - 1) + ' ' + str(getWeights(j - 1)[0:4]))
             print(str(j) + ' ' + str(getWeights(j)[0:4]))
             print('converged //')
@@ -322,6 +291,40 @@ def specsharp(grid_spacing, coarse_fac, nyquist_wavenumber):
     return filter_kernel, jj
 
 
+# ----------------------------------------------------------
+# take filter_kernel created by specsharp() and convolve it with signal 
+def sharp_smooth(filter_kernel, signal0):            
+    n = np.int((len(filter_kernel) - 1)/2) # filter half-width
+    filter_width = len(filter_kernel)
+    smooth_sig = np.nan*np.ones(np.shape(signal0))
+    for p in range(np.shape(signal0)[0]):     # -- loop over each cycle of each track 
+        this_sig = signal0[p, :].copy()
+        for j in range(len(this_sig)):        # -- loop over each grid point and smooth.
+            
+            # -- OLD -- DONT USE 
+            # # if at left or right edge (filter is only partial) skip 
+            # if j < n:  # edge0
+                # sig_partial = np.concatenate((np.zeros(n - j), this_sig[0:(j + n + 1)]))
+                # if np.sum(np.isnan(sig_partial)) < 1:
+                #     smooth_sig[p, j] = np.nansum(filter_kernel * sig_partial)
+            #     continue    
+            # elif j >= (len(this_sig) - n):  # edge1
+                # sig_partial = np.concatenate((this_sig[(j - n):], np.zeros(filter_width - len(this_sig[(j - n):]))))
+                # if np.sum(np.isnan(sig_partial)) < 1:
+                #     smooth_sig[p, j] = np.nansum(filter_kernel * sig_partial)
+            #    continue
+            # else:
+            # -------
+            
+            if np.sum(np.isnan(this_sig[(j - n):(j + n + 1)])) < 1:  # check that there are no nans in signal to be filtered 
+                smooth_sig[p, j] = np.nansum(filter_kernel * this_sig[(j - n):(j + n + 1)])
+        smooth_sig[p, np.isnan(this_sig)] = np.nan
+    return smooth_sig
+
+
+# -----------------------------------------------
+# smoothing function that calls filtering function (depending on choice of filter) 
+# does actual smoothing 
 def smooth_tracks(dist, adt, sla, lon_record, lat_record, time_record, track_record, coarsening_factor, filter_choice, nyquist_wavelength):
     hor_grid_spacing = dist[0][1] - dist[0][0]
     
@@ -367,30 +370,48 @@ def smooth_tracks(dist, adt, sla, lon_record, lat_record, time_record, track_rec
     return sla_smooth, adt_smooth
 
 
-def sharp_smooth(filter_kernel, signal0):            
-    n = np.int((len(filter_kernel) - 1)/2) # filter half-width
-    filter_width = len(filter_kernel)
-    # -- loop over transect or pass
-    smooth_sig = np.nan*np.ones(np.shape(signal0))
-    for p in range(np.shape(signal0)[0]):
-        this_sig = signal0[p, :].copy()
-        for j in range(len(this_sig)):  # loop over each grid point and smooth.
-            # if at left or right edge (filter is only partial) skip 
-            if j < n:  # edge0
-                # sig_partial = np.concatenate((np.zeros(n - j), this_sig[0:(j + n + 1)]))
-                # if np.sum(np.isnan(sig_partial)) < 1:
-                #     smooth_sig[p, j] = np.nansum(filter_kernel * sig_partial)
-                continue    
-            elif j >= (len(this_sig) - n):  # edge1
-                # sig_partial = np.concatenate((this_sig[(j - n):], np.zeros(filter_width - len(this_sig[(j - n):]))))
-                # if np.sum(np.isnan(sig_partial)) < 1:
-                #     smooth_sig[p, j] = np.nansum(filter_kernel * sig_partial)
-                continue
-            else:
-                if np.sum(np.isnan(this_sig[(j - n):(j + n + 1)])) < 1:  # check that there are no nans in this filter use at j 
-                    smooth_sig[p, j] = np.nansum(filter_kernel * this_sig[(j - n):(j + n + 1)])
-        smooth_sig[p, np.isnan(this_sig)] = np.nan
-    return smooth_sig
+# --------------------------------------------------------------
+# coarsen data after it has been smoothed (part two of coarse graining process)
+# inputs:
+# - dist = list of horizontal grids for each satellite track 
+# - lon_record, lat_record = corresponding latitude and longitude points of every grid point
+# - coarsening factor = multiplier of initial grid scale (i.e. dist[mm][1] - dist[mm][0])
+# - sig_in = signal (where for example sig_in[mm] has units [cycle_number, grid] 
+def coarsen(dist, lon_record, lat_record, coarsening_factor, sig_in):  
+    coarse_sig_out = []
+    coarse_grid_out = []
+    coarse_lon_out = []
+    coarse_lat_out = []
+    for mm in tqdm(range(len(dist))):  # loop over each track 
+        this_dist = dist[mm]
+        this_lon = lon_record[mm]
+        this_lat = lat_record[mm]
+        smooth_sig = sig_in[mm]
+        
+        coarse_grid = np.arange(this_dist[0], this_dist[-1], (this_dist[1] - this_dist[0]) * coarsening_factor)
+        coarse_i = np.nan * np.ones((np.shape(smooth_sig)[0], len(coarse_grid) - 1))
+        coarse_lon = np.nan * np.ones(len(coarse_grid) - 1)
+        coarse_lat = np.nan * np.ones(len(coarse_grid) - 1)
+        
+        if len(coarse_grid) > 3:
+            coarse_grid_c = coarse_grid[0:-1] + (coarse_grid[1] - coarse_grid[0])/2  # bin center  
+        else:
+            coarse_grid_c = coarse_grid[0:-1]  
+
+        if len(coarse_grid) > coarsening_factor:           
+            # average all points in bins with width equal to coarser grid 
+            for j in range(1, len(coarse_grid)):
+                coarse_i[:, j - 1] = np.nanmean(smooth_sig[:, (this_dist > coarse_grid[j - 1]) &\
+                                                           (this_dist < coarse_grid[j])], axis=1)  
+                coarse_lon[j - 1] = np.nanmean(this_lon[(this_dist > coarse_grid[j - 1]) & (this_dist < coarse_grid[j])])
+                coarse_lat[j - 1] = np.nanmean(this_lat[(this_dist > coarse_grid[j - 1]) & (this_dist < coarse_grid[j])])
+        
+        coarse_grid_out.append(coarse_grid_c)
+        coarse_lon_out.append(coarse_lon)
+        coarse_lat_out.append(coarse_lat)
+        coarse_sig_out.append(coarse_i)
+                    
+    return coarse_grid_out, coarse_lon_out, coarse_lat_out, coarse_sig_out
 
 
 # horizontal wavenumber spectra 
