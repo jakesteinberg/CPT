@@ -266,7 +266,7 @@ def specsharp(grid_spacing, x, nyquist_wavelength):
         w[0] = 1 - 2*np.sum(w[1:])
         return w
     
-    F = interpolate.PchipInterpolator(np.array([0, 1/x, nyquist_wavelenth/x, nyquist_wavelength]), np.array([1, 1, 0, 0]))
+    F = interpolate.PchipInterpolator(np.array([0, 1/x, nyquist_wavelength/x, nyquist_wavelength]), np.array([1, 1, 0, 0]))
     print('Filter Half-Width = ')    
             
     weight_prev = getWeights(2)
@@ -285,7 +285,7 @@ def specsharp(grid_spacing, x, nyquist_wavelength):
             
     filter_kernel = np.concatenate((np.flip(getWeights(jj))[0:-1], getWeights(jj)))
     print('------------------------------------------------------------')
-    print('for a coarsening factor of ' + str(coarse_fac) + ', recommend:')
+    print('for a coarsening factor of ' + str(x) + ', recommend:')
     print('-- filter width of ' + str(2*jj + 1) + ' grid cells (here = ' + str(grid_spacing * (2*jj + 1)) + ' km)')
     print('------------------------------------------------------------')
     return filter_kernel, jj
@@ -299,25 +299,14 @@ def sharp_smooth(filter_kernel, signal0):
     smooth_sig = np.nan*np.ones(np.shape(signal0))
     for p in range(np.shape(signal0)[0]):     # -- loop over each cycle of each track 
         this_sig = signal0[p, :].copy()
-        for j in range(len(this_sig)):        # -- loop over each grid point and smooth.
-            
-            # -- OLD -- DONT USE 
-            # # if at left or right edge (filter is only partial) skip 
-            # if j < n:  # edge0
-                # sig_partial = np.concatenate((np.zeros(n - j), this_sig[0:(j + n + 1)]))
-                # if np.sum(np.isnan(sig_partial)) < 1:
-                #     smooth_sig[p, j] = np.nansum(filter_kernel * sig_partial)
-            #     continue    
-            # elif j >= (len(this_sig) - n):  # edge1
-                # sig_partial = np.concatenate((this_sig[(j - n):], np.zeros(filter_width - len(this_sig[(j - n):]))))
-                # if np.sum(np.isnan(sig_partial)) < 1:
-                #     smooth_sig[p, j] = np.nansum(filter_kernel * sig_partial)
-            #    continue
-            # else:
-            # -------
-            
-            if np.sum(np.isnan(this_sig[(j - n):(j + n + 1)])) < 1:  # check that there are no nans in signal to be filtered 
-                smooth_sig[p, j] = np.nansum(filter_kernel * this_sig[(j - n):(j + n + 1)])
+        for j in range(len(this_sig)):        # -- loop over each grid point and smooth. 
+            if j < n:                         # edge0 (ignore and don't smoothe edge)
+                continue
+            elif j >= (len(this_sig) - n):    # edge1 (ignore and don't smoothe edge)
+                continue
+            else:
+                if np.sum(np.isnan(this_sig[(j - n):(j + n + 1)])) < 1:  # check that there are no nans in signal to be filtered 
+                    smooth_sig[p, j] = np.nansum(filter_kernel * this_sig[(j - n):(j + n + 1)])
         smooth_sig[p, np.isnan(this_sig)] = np.nan
     return smooth_sig
 
