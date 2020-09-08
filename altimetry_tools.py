@@ -266,7 +266,8 @@ def specsharp(grid_spacing, x, nyquist_wavelength):
         w[0] = 1 - 2*np.sum(w[1:])
         return w
     
-    F = interpolate.PchipInterpolator(np.array([0, 1/x, nyquist_wavelength/x, nyquist_wavelength]), np.array([1, 1, 0, 0]))
+    # F = interpolate.PchipInterpolator(np.array([0, 1/x, nyquist_wavelength/x, nyquist_wavelength]), np.array([1, 1, 0, 0]))
+    F = interpolate.PchipInterpolator(np.array([0, np.pi/(nyquist_wavelength*x), np.pi/x, np.pi]), np.array([1, 1, 0, 0]))
     print('Filter Half-Width = ')    
             
     weight_prev = getWeights(2)
