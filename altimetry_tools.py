@@ -104,8 +104,8 @@ def interpolate_nans(data, grid, cutoff):  # SLA
                         this_seg_s = these_segments[j][0] - 1
                         this_seg_e = these_segments[j][-1] + 1
                         interp_sig[this_seg_s:this_seg_e+1] = np.interp(grid[this_seg_s:this_seg_e+1], [grid[this_seg_s], grid[this_seg_e]], [this_u[this_seg_s], this_u[this_seg_e]])
-                elif len(seg_out_count) == 1:
-                    interp_sig[these_segments[0]:these_segments[-1]+1] = np.interp(grid[these_segments[0]:these_segments[-1]+1], [grid[these_segments[0]], grid[these_segments[-1]]], [this_u[these_segments[0]], this_u[these_segments[-1]]])
+                elif seg_out_count[i] == 1:
+                    interp_sig[these_segments[0]-1:these_segments[-1]+1] = np.interp(grid[these_segments[0]-1:these_segments[-1]+1], [grid[these_segments[0]-1], grid[these_segments[-1]+1]], [this_u[these_segments[0]-1], this_u[these_segments[-1]+1]])
             
         interpolated_signal[i, :] = interp_sig
             
