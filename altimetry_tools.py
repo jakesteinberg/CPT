@@ -556,21 +556,22 @@ def filterSpec1(dxMin,Lf,d=2,shape="Gaussian",X=np.pi,N=-1,plot_filter=1):
     #pylab.rcParams.update(params)
     
     if plot_filter:
-        # f, ax = plt.subplots(1,1,figsize=(7,5))
-        plt.plot(k,F(x),'g',label='target filter',linewidth=4)
         if shape=="Gaussian":
-            plt.axvline(2*np.pi/(np.sqrt(12)*Lf),color='m',linewidth=2, label=' Gaussian std', linestyle='--')
-            plt.plot(k,np.polynomial.chebyshev.chebval(x,p),'m',label='Gaussian approximation',linewidth=3)
+            plt.plot(k,F(x),'m',label='Gaussian target',linewidth=4)
+            plt.axvline(2*np.pi/(np.sqrt(12)*Lf),color='m',linewidth=1.5, label=' Gaussian std', linestyle='--')
+            plt.plot(k,np.polynomial.chebyshev.chebval(x,p),'r',label='Gaussian approx.',linewidth=2, linestyle='-.')
         else:
-            plt.plot(k,np.polynomial.chebyshev.chebval(x,p),'b',label='Taper approximation',linewidth=3)
-            plt.axvline(2*np.pi/(X*Lf),color='b',linewidth=1)
-            plt.axvline(2*np.pi/Lf,color='b',linewidth=1, label='Taper cutoff',linestyle='--')
+            plt.plot(k,F(x),'g',label='Taper target',linewidth=4)
+            plt.plot(k,np.polynomial.chebyshev.chebval(x,p),'b',label='Taper approx.',linewidth=2, linestyle='-.')
+            plt.axvline(2*np.pi/(X*Lf),color='b',linewidth=1.5, label='Taper scale', linestyle='--')
+            # plt.axvline(2*np.pi/Lf,color='b',linewidth=1, label='Taper cutoff',linestyle='--')
         left, right = plt.xlim()
         plt.xlim(left=0, right=2)
         bottom,top = plt.ylim()
         plt.ylim(bottom=-0.2, top=1.1)
-        plt.xlabel(r'k [$\sqrt{\frac{1}{2}\frac{\pi^2}{dx^2}(x+1)}$]', fontsize=15)
-        plt.title('Lf = ' + str(Lf), fontsize=15)
+        plt.xlabel(r'k [$\sqrt{\frac{1}{2}\frac{\pi^2}{dx^2}(x+1)}$]', fontsize=13)
+        plt.ylabel('amplitude', fontsize=13)
+        plt.title('Lf = ' + str(Lf), fontsize=14)
         plt.grid(True)
            
     
@@ -623,7 +624,7 @@ def Laplacian1D(field,landMask,dx):
 
 # -----------------------------------------------------------------------------------------
 # FILTER DATA with filterSpec and Laplacian1D
-def Filter(N, filter_type, field, dx, coarsening_factor, *args, **kwargs):
+def Filter(filter_type, field, dx, coarsening_factor, *args, **kwargs):
     
     if filter_type == 'boxcar':
         sla_filt_out = []
@@ -636,17 +637,21 @@ def Filter(N, filter_type, field, dx, coarsening_factor, *args, **kwargs):
             sla_filt_out.append(sla_filt)    
     else:
         plot_filter = kwargs.get('plot_filter', 0)
-        NL,sL,NB,sB = filterSpec(N, dx, coarsening_factor, plot_filter, filter_type, X=np.pi)
+        # NL,sL,NB,sB = filterSpec(N, dx, coarsening_factor, plot_filter, filter_type, X=np.pi)
+        p,NL,sL,NB,sB = filterSpec1(dx,coarsening_factor,d=1,shape=filter_type,X=np.pi,N=-1,plot_filter=plot_filter)
         sla_filt_out = []
         # each track
         for c in range(len(field)):  # tqdm(range(len(field))):
             sla_filt = np.nan * np.ones(np.shape(field[c]))
-            land = np.where(np.isnan(field[c][0, :]))[0]
-            landMask = np.zeros(np.shape(field[c])[1])
-            landMask[land] = 1
             # each cycle
             for m in range(np.shape(field[c])[0]):
                 data = field[c][m, :].copy()
+                land = np.where(np.isnan(field[c][m, :]))[0]
+                landMask = np.zeros(np.shape(field[c])[1])
+                landMask[land] = 1
+                wetMask = 1 - landMask
+                data = np.nan_to_num(data) 
+                data = data * wetMask # Initalize the filtering process
                 # tempL_out = np.nan * np.ones((NL, np.shape(field)[0], np.shape(field)[1]))
                 for i in range(NL):
                     tempL = Laplacian1D(data,landMask,dx)
@@ -656,7 +661,8 @@ def Filter(N, filter_type, field, dx, coarsening_factor, *args, **kwargs):
                     tempL = Laplacian1D(data, landMask, dx)
                     tempB = Laplacian1D(tempL, landMask, dx)
                     data = data + (2*np.real(sB[i])/(np.abs(sB[i])**2))*tempL + (1/(np.abs(sB[i])**2))*tempB
-                sla_filt[m, :] = data
+                # sla_filt[m, :] = data
+                sla_filt[m, np.where(wetMask > 0)[0]] = data[np.where(wetMask > 0)[0]]
             sla_filt_out.append(sla_filt)
             
     return(sla_filt_out)
@@ -751,9 +757,9 @@ def velocity(dist, sla, lon_record, lat_record, track_record, stencil_width):
             # -- gradients from a 5 point stencil
             elif stencil_width == 5:   
                 sla_grad[:, cdm] = (-this_sla[:, cdm+2] + 8*this_sla[:, cdm+1] - 8*this_sla[:, cdm-1] \
-                                    + this_sla[:, cdm-2]) / (12*(hor_grid_spacing*1000.0))
+                                    + this_sla[:, cdm-2]) / (12*(grid_space*1000.0))
             elif stencil_width == 3: 
-                sla_grad[:, cdm] = (this_sla[:, cdm+1] - this_sla[:, cdm-1]) / (2*(hor_grid_spacing*1000.0))  
+                sla_grad[:, cdm] = (this_sla[:, cdm+1] - this_sla[:, cdm-1]) / (2*(grid_space*1000.0))  
             else:
                 print('select either 3,5,7 for gradient stencil_width')
                 

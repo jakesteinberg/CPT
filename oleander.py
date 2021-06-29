@@ -18,29 +18,34 @@ from toolkit import pol2cart, cart2pol, plot_pro
 # filepath = '/Users/jakesteinberg/Documents/CPT/oleander/OL_1522517.mat'
 # filepath = '/Users/jakesteinberg/Documents/CPT/oleander/OL_1621870.mat'
 # filepath = '/Users/jakesteinberg/Documents/CPT/oleander/oleander_2017_concat.mat'
-# -- I've strung together 2004-2017 in matlab 
-filepath = '/Users/jakesteinberg/Documents/CPT/oleander/oleander_concat.mat'
+
+# -- I've strung together 2004-2017 in matlab: DIMENSIONS [: X depth]
+# -- in oleander_concatenate.m we combine different years of data AND select max depth to consider 
+filepath = '/Users/jakesteinberg/Documents/CPT/adcp/oleander/oleander_concat.mat'
 x1 = loadmat(filepath) 
 
 # -- time bounds 
 this_year = str(np.int(np.floor(np.nanmin(x1['out']['time'][0][0])/10000))) + '_' + str(np.int(np.floor(np.nanmax(x1['out']['time'][0][0])/10000)))
 # this_year = '2017'
+
 # -- tsg
 # x2 = loadmat('/Users/jakesteinberg/Documents/CPT/oleander/oleander_tsg_raw.mat')
+
 # -- bathy
 bathy = xr.open_dataset('/Users/jakesteinberg/Documents/CPT/etopo_n_atl.nc') 
 
-# -- knobs
+# ----------------------
+# -- processing knobs --
 savee = 0
-save_nc = 1
+save_nc = 0
 file_out = '/Users/jakesteinberg/Documents/CPT/oleander/' + this_year + '_gridded.nc'
 grid_spacing = 2  # km to interpolate to 
 adcp_grid = np.arange(240, 1240, grid_spacing)  # was 220 if including gulf stream
 sf = 25  # scale factor (this number x grid_spacing) (acceptable number of nans in nan segments)
 lev = [10, 25, 60]  # depth level indices to plot 
-# -- 
+# ---------------------- 
 
-# -- ADCP 
+# -- define variables ADCP ------- 
 adcp_lon0 = x1['out']['lon'][0][0] 
 adcp_lat0 = x1['out']['lat'][0][0]
 adcp_u0 = x1['out']['u'][0][0]
@@ -55,15 +60,16 @@ dep_levs = x1['out']['depth'][0][0][0][0:65]
 #     adcp_days = np.abs(np.abs(x1['days']) - 365)  # something is off by a day or two in dates between tsg and adcp
 
 # -- with years already combined in matlab
-adcp_days = x1['out']['time'][0][0]    
-adcp_day_list = np.unique(np.floor(adcp_days[np.isfinite(adcp_days)]))  # unique number of start days for each sample 
+adcp_days = x1['out']['time'][0][0]                                                # format = 19980013.5
+adcp_day_list = np.unique(np.floor(adcp_days[np.isfinite(adcp_days)]))             # unique number of start days for each sample 
+
 # try alternate method 
-good = np.where(np.isfinite(adcp_days))[0]  # indicies in adcp_days where where expect data 
-good_times = adcp_days[good, 0]
-time_gaps = np.diff(good_times) # time gap between good data 
-splits_0 = np.where(time_gaps > 0.5)[0]  # search where time gaps are greater than 1 (indices of time gap, shorter array than adcp_days)
-time_splits = good_times[splits_0]
-iii, splits, iiii = np.intersect1d(adcp_days, time_splits, return_indices=True)
+good = np.where(np.isfinite(adcp_days))[0]                                         # indicies in adcp_days where where expect data 
+good_times = adcp_days[good, 0]                                                    # select finite indices 
+time_gaps = np.diff(good_times)                                                    # time gap between good data 
+splits_0 = np.where(time_gaps > 0.5)[0]                                            # search where time gaps are greater than 1 (indices of time gap, shorter array than adcp_days)
+time_splits = good_times[splits_0]                                                 # 
+iii, splits, iiii = np.intersect1d(adcp_days, time_splits, return_indices=True)    # find where splits occur in adcp_days (each split should bound good cruises)
 ## # split into "by cruise" or "by transect"
 ## good = np.where(np.isfinite(adcp_days))[0]  # indicies in adcp_days where where expect data 
 ## splits = np.where(np.diff(good) > 1)[0] 
@@ -116,6 +122,8 @@ for i in range(len(splits) + 1):
         adcp_time.append(adcp_days[st_i:en_i+1])
         adcp_time_mean[count] = np.nanmean(adcp_days[st_i:en_i+1])
         count = count + 1
+
+# number of crossings between NJ and Bermuda (these crossings meet selection criteria)
 num_profs = len(adcp_lon)
 adcp_time_mean = adcp_time_mean[np.isfinite(adcp_time_mean)]
 
@@ -200,7 +208,7 @@ for i in tqdm(range(num_profs), ncols=100):  # loop over each pass (or track)
             rho_track[j], phi_track[j] = cart2pol(dx, dy)  # rotate u,v into polar coordinates (rho = magnitude, phi = angle)    
             
     dist = this_dist[0:len(this_lon)]
-    rho_track_1 = rho_track[0:len(this_lon)]
+    rho_track_1 = rho_track[0:len(this_lon)]  # remove extra elements of array (should be nans after the index equal to the length of this_lon)
     phi_track_1 = phi_track[0:len(this_lon)]
     d_good = np.isfinite(dist)
     if len(d_good) < len(dist):
