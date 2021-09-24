@@ -686,10 +686,14 @@ def smooth_tracks_deg(dist, sla, lon_record, lat_record, resolution, sigma):
         for i in range(11, np.shape(this_sla)[1] - 11):  # loop across all space
             if np.isnan(this_lon_step[i]):
                 continue
-            this_local_grid = np.arange(-this_lon_step[i]*4, this_lon_step[i]*5, this_lon_step[i])   # create local grid 
-            for k in range(np.shape(this_sla)[0]):                                                   # loop in time (across each cycle)
-                sla_on_local_lon_grid = np.interp(this_local_grid, (this_dist[i-10:i+11]*1000) - this_dist[i]*1000, this_sla[k, i-10:i+11])
-                sla_filt[k, i] = si.gaussian_filter(sla_on_local_lon_grid, sigma, order=0)[10]       # extract middle value [index=10]       
+            # create local grid 
+            this_local_grid = np.arange(-this_lon_step[i]*4, this_lon_step[i]*5, this_lon_step[i])   
+            # loop in time (across each cycle)
+            for k in range(np.shape(this_sla)[0]):                                                   
+                sla_on_local_lon_grid = np.interp(this_local_grid, (this_dist[i-10:i+11]*1000) - this_dist[i]*1000, \
+                                                  this_sla[k, i-10:i+11])
+                # extract middle value [index=10]
+                sla_filt[k, i] = si.gaussian_filter(sla_on_local_lon_grid, sigma, order=0)[10]     
         sla_filtered.append(sla_filt)
     return sla_filtered
 
