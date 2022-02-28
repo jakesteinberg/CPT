@@ -557,13 +557,13 @@ def filterSpec1(dxMin,Lf,d=2,shape="Gaussian",X=np.pi,N=-1,plot_filter=1):
     
     if plot_filter:
         if shape=="Gaussian":
-            plt.plot(k,F(x),'m',label='Gaussian target',linewidth=4)
-            plt.axvline(2*np.pi/(np.sqrt(12)*Lf),color='m',linewidth=1.5, label=' Gaussian std', linestyle='--')
-            plt.plot(k,np.polynomial.chebyshev.chebval(x,p),'r',label='Gaussian approx.',linewidth=2, linestyle='-.')
+            plt.plot(k,F(x),color='#F08080',label='Gaussian target',linewidth=4)
+            plt.plot(k,np.polynomial.chebyshev.chebval(x,p),color='#B22222',label='Gaussian approx.',linewidth=2, linestyle='-.')
+            plt.axvline(2*np.pi/(np.sqrt(12)*Lf),color='#B22222',linewidth=1.5, label=' Gaussian std', linestyle='--')
         else:
-            plt.plot(k,F(x),'g',label='Taper target',linewidth=4)
-            plt.plot(k,np.polynomial.chebyshev.chebval(x,p),'b',label='Taper approx.',linewidth=2, linestyle='-.')
-            plt.axvline(2*np.pi/(X*Lf),color='b',linewidth=1.5, label='Taper scale', linestyle='--')
+            plt.plot(k,F(x),color='#4682B4',label='Taper target',linewidth=4)
+            plt.plot(k,np.polynomial.chebyshev.chebval(x,p),color='#000080',label='Taper approx.',linewidth=2, linestyle='-.')
+            plt.axvline(2*np.pi/(X*Lf),color='#000080',linewidth=1.5, label='Taper scale', linestyle='--')
             # plt.axvline(2*np.pi/Lf,color='b',linewidth=1, label='Taper cutoff',linestyle='--')
         left, right = plt.xlim()
         plt.xlim(left=0, right=2)
